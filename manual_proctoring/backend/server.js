@@ -2,14 +2,19 @@ const crypto = require('crypto')
 const express = require('express')
 const cors = require('cors')
 const path = require('path')
+const fs = require('fs')
 
 const app = express()
 const PORT = 5000
 const SESSION_TTL_MS = 60 * 60 * 1000
 const EXAM_DURATION_SECONDS = 10 * 60
+const LOG_DIRECTORY = path.join(__dirname, 'logs')
+const WARNING_LOG_FILE = path.join(LOG_DIRECTORY, 'warnings.log')
 
 app.use(cors())
 app.use(express.json())
+
+fs.mkdirSync(LOG_DIRECTORY, { recursive: true })
 
 const student = {
   id: 'ST101',
@@ -124,6 +129,21 @@ function serializeAttempt(attempt) {
   }
 }
 
+function logWarning(studentProfile, violation) {
+  const timestamp = new Date(violation.createdAt).toISOString()
+  const logEntry =
+    `[${timestamp}] WARNING studentId=${studentProfile.id} name="${studentProfile.name}" ` +
+    `type=${violation.type} detail="${violation.detail || 'N/A'}"`
+
+  console.warn(logEntry)
+
+  try {
+    fs.appendFileSync(WARNING_LOG_FILE, `${logEntry}\n`, 'utf8')
+  } catch (error) {
+    console.error('Failed to write warning log:', error)
+  }
+}
+
 app.post('/api/login', (req, res) => {
   const email = String(req.body.email || '').trim()
   const password = String(req.body.password || '')
@@ -226,6 +246,7 @@ app.post('/api/exam/violations', requireAuth, (req, res) => {
 
   attempt.violations.push(violation)
   attempt.violationCount += 1
+  logWarning(req.student, violation)
 
   return res.json({
     success: true,
